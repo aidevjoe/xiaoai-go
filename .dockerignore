@@ -1,0 +1,20 @@
+# 构建上下文只留编译真正需要的东西。
+# 注意：internal/server/web/dist 是**必须带**的（go:embed 引用它），
+# 所以这里只能排除根目录的 dist/，不能写 **/dist。
+
+dist/
+models/
+.data/
+ui/node_modules/
+ui/dist/
+
+# 与镜像无关的仓库文件
+.git/
+.github/
+docs/
+assets/
+*.md
+!deploy/Dockerfile.server
+
+*.log
+.DS_Store

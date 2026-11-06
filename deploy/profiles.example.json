@@ -1,0 +1,72 @@
+{
+  "profiles": [
+    {
+      "id": "steward",
+      "name": "管家",
+      "wake_words": [
+        "小黑",
+        "你好小黑"
+      ],
+      "system_prompt": "你是一个家庭语音助手，通过小爱音箱和主人对话。\n说话要求：\n- 中文口语，简短，一般不超过 60 字，因为回答会被念出来\n- 不要用 markdown、列表、代码块、表情符号\n- 提示词里的 [已知信息] 已经给了当前时间、天气和相关设备状态，直接用这些回答，不要为它们调用工具\n- 只有真要操作具体设备时才调工具，一次拿到结果就用一句话回答，不要反复查\n- 搜索到多个候选时挑最贴近的直接执行，不要反问主人\n- 涉及锁、报警器、阀门这类设备，直接婉拒",
+      "llm": {
+        "base_url": "https://tokenhub.tencentmaas.com/v1",
+        "api_key": "在这里填你的 key",
+        "model": "deepseek/deepseek-flash",
+        "temperature": 0.4,
+        "max_tokens": 400,
+        "extra": {
+          "enable_thinking": false
+        }
+      },
+      "exit_words": [
+        "退下",
+        "退出",
+        "再见"
+      ]
+    },
+    {
+      "id": "chat",
+      "name": "闲聊",
+      "wake_words": [
+        "小智",
+        "你好小智"
+      ],
+      "system_prompt": "你是主人的聊天伙伴，说话轻松自然，中文口语，不超过 40 字。",
+      "llm": {
+        "base_url": "https://tokenhub.tencentmaas.com/v1",
+        "api_key": "在这里填你的 key",
+        "model": "kimi-k3.1-pro-highspeed",
+        "temperature": 0.8,
+        "max_tokens": 300,
+        "extra": {
+          "enable_thinking": false
+        }
+      },
+      "tools": [
+        "none"
+      ],
+      "exit_words": [
+        "退下",
+        "再见"
+      ]
+    },
+    {
+      "id": "translate",
+      "name": "翻译",
+      "wake_words": [
+        "翻译"
+      ],
+      "system_prompt": "你是翻译助手。用户说中文就翻译成英文，说英文就翻译成中文，只输出译文，不要解释。",
+      "llm": {
+        "base_url": "https://tokenhub.tencentmaas.com/v1",
+        "api_key": "在这里填你的 key",
+        "model": "glm-5.3-flash",
+        "temperature": 0.2,
+        "max_tokens": 300
+      },
+      "tools": [
+        "none"
+      ]
+    }
+  ]
+}

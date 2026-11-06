@@ -1,0 +1,126 @@
+name: Release
+
+# 打 tag（v1.2.3）自动出三样东西：
+#   1. GHCR 镜像 ghcr.io/<owner>/xiaoai-go:1.2.3 / :latest
+#   2. 音箱端二进制（armv7）随 Release 附件发布
+#   3. 源码 zip（GitHub 自带）
+#
+# 也可以手动触发（Actions → Release → Run workflow），此时只构建不发布。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: '目标架构（逗号分隔）'
+        required: false
+        default: 'linux/amd64'
+        type: string
+
+permissions:
+  contents: write # 发 Release
+  packages: write # 推 GHCR
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/xiaoai-go
+
+jobs:
+  # ---------------------------------------------------------------- 镜像
+  image:
+    name: 镜像 · ${{ inputs.platforms || 'linux/amd64' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # sherpa-onnx 是 C++ 库，服务端必须 cgo 编译；跨架构要靠 qemu。
+      # 默认只出 amd64（绝大多数 NAS 是 x86_64）；需要 arm64 时手动触发并
+      # 传 linux/amd64,linux/arm64 —— 走 qemu 模拟会慢很多（20 分钟级）。
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.server
+          platforms: ${{ inputs.platforms || 'linux/amd64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 构建结果
+        run: |
+          echo "镜像：${{ env.IMAGE }}"
+          echo "${{ steps.meta.outputs.tags }}" | sed 's/^/  /'
+
+  # ---------------------------------------------------------------- 客户端 + Release
+  client:
+    name: 客户端 · armv7
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: 构建
+        run: make client client-tls
+
+      - name: 校验和
+        run: |
+          cd dist
+          sha256sum xiaoai-client-armv7 xiaoai-client-armv7-tls > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-armv7
+          path: dist/xiaoai-client-armv7*
+
+      - name: 发布到 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/xiaoai-client-armv7
+            dist/xiaoai-client-armv7-tls
+            dist/SHA256SUMS.txt
+          body: |
+            ## 小爱GO ${{ github.ref_name }}
+
+            ### 安装（Docker）
+            ```bash
+            docker run -d --name xiaoai-server --restart unless-stopped \
+              -p 4399:4399 -p 8080:8080 \
+              -v $PWD/models:/models:ro -v $PWD/data:/data \
+              ghcr.io/${{ github.repository_owner }}/xiaoai-go:${{ github.ref_name }}
+            ```
+
+            ### 音箱端
+            下载 `xiaoai-client-armv7`，推到音箱后安装：
+            ```bash
+            DEV=音箱IP PASS='root密码' SERVER=ws://服务端地址:4399/ws \
+              sh deploy/scripts/install-client.sh
+            ```
+
+            校验和见 `SHA256SUMS.txt`。

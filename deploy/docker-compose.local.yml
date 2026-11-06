@@ -1,0 +1,24 @@
+# 本机验证用 compose（Colima/Docker Desktop 均可）
+# 只需 4399（设备面）+ 8080（管理面），模型目录挂载进来
+services:
+  xiaoai-server:
+    image: xiaoai-server:dev
+    container_name: xiaoai-server-dev
+    restart: unless-stopped
+    ports:
+      - "4399:4399"
+      - "8080:8080"
+    environment:
+      - TZ=Asia/Shanghai
+      - LD_LIBRARY_PATH=/opt/sherpa/lib
+    volumes:
+      - ./models:/models:ro
+    command:
+      - "-device-addr=:4399"
+      - "-admin-addr=:8080"
+      - "-models=/models"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3

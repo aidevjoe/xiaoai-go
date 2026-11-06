@@ -1,0 +1,7 @@
+# 前端构建产物：让 GitHub 不把它算进语言统计，也不在 diff 里展开
+internal/server/web/dist/** linguist-generated=true
+ui/package-lock.json       linguist-generated=true
+
+# 统一换行符，避免 Windows 贡献者的 CRLF 噪音
+* text=auto eol=lf
+*.sh text eol=lf

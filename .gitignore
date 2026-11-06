@@ -1,0 +1,31 @@
+# 本地编译产物
+/dist/
+*.exe
+
+# 运行时数据：settings.json 里有 API key / 令牌，绝不能进仓库
+.data/
+
+# 模型是下载产物，用 deploy/scripts/fetch-models-local.sh 拉（约 480MB）
+/models/
+
+# 前端依赖（注意：internal/server/web/dist 是有意入库的——
+# go:embed 需要它，缺了它 `go build` 直接失败）
+ui/node_modules/
+ui/dist/
+
+# 日志与崩溃转储（Rosetta 下跑 go build 会掉 core）
+*.log
+core
+core.*
+
+# 编辑器 / 系统杂物
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# 根目录下误编译出来的二进制（go build ./cmd/server 不带 -o 就会落在这里）
+/xiaoai-client
+/xa-server
+/server
+/fakeclient

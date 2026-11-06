@@ -1,0 +1,60 @@
+# xiaoai-go 服务端镜像
+#
+# 只有服务端需要 cgo（sherpa-onnx 是 C++ 库）。音箱端 client 是纯 Go 静态编译，
+# 不经过这个镜像。
+#
+# 构建（在目标机上原生构建最省事；避免用 qemu 跨架构编译 cgo）：
+#   docker build -f deploy/Dockerfile.server -t xiaoai-server:dev .
+#
+# 架构由 uname -m 推导，不依赖 buildx 的 $TARGETARCH，
+# 因为极空间 NAS 上的 docker 是 legacy builder。
+
+FROM golang:1.24-bookworm AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc libc6-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# 先拷依赖清单，利用层缓存
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# 推导 GOARCH 与 sherpa 的 .so 目录（模块内按架构分目录存放）
+RUN set -e; \
+    M="$(uname -m)"; \
+    case "$M" in \
+        x86_64)        GOARCH_VAL=amd64; LIBDIR=x86_64-unknown-linux-gnu ;; \
+        aarch64|arm64) GOARCH_VAL=arm64; LIBDIR=aarch64-unknown-linux-gnu ;; \
+        armv7l|armv7)  GOARCH_VAL=arm;   LIBDIR=arm-unknown-linux-gnueabihf ;; \
+        *) echo "不支持的架构: $M"; exit 1 ;; \
+    esac; \
+    SHERPA_DIR="$(go list -m -f '{{.Dir}}' github.com/k2-fsa/sherpa-onnx-go-linux)"; \
+    test -d "$SHERPA_DIR/lib/$LIBDIR" || { echo "找不到 $LIBDIR 下的 sherpa .so"; exit 1; }; \
+    echo "构建架构: $M -> GOARCH=$GOARCH_VAL, lib=$LIBDIR"; \
+    mkdir -p /out/lib; \
+    cp -a "$SHERPA_DIR/lib/$LIBDIR"/*.so* /out/lib/; \
+    ls -lh /out/lib; \
+    CGO_ENABLED=1 GOOS=linux GOARCH="$GOARCH_VAL" \
+        go build -tags sherpa -trimpath -ldflags "-s -w" -o /out/xiaoai-server ./cmd/server; \
+    ls -lh /out/xiaoai-server
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 libstdc++6 ca-certificates tzdata curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/xiaoai-server /usr/local/bin/xiaoai-server
+COPY --from=build /out/lib/ /opt/sherpa/lib/
+
+ENV LD_LIBRARY_PATH=/opt/sherpa/lib \
+    TZ=Asia/Shanghai
+
+EXPOSE 4399 8080
+
+ENTRYPOINT ["/usr/local/bin/xiaoai-server"]
+CMD ["-device-addr=:4399", "-admin-addr=:8080", "-models=/models"]

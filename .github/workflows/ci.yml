@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go · vet / fmt / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # 服务端要 cgo（sherpa-onnx），但 CI 里只跑"不含引擎"的部分：
+      # 引擎相关代码在 -tags sherpa 下才编译，默认构建走 stub，
+      # 这样不需要在 runner 上装 480MB 模型也能验证全部业务逻辑。
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l cmd internal)
+          if [ -n "$out" ]; then
+            echo "以下文件未格式化，请跑 make fmt："
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go test
+        run: go test ./... -count=1
+
+  client:
+    name: 客户端交叉编译（armv7）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 客户端必须用 Go 1.23 编译：Go 1.24+ 的 crypto/internal/fips140 在
+      # 音箱的 Linux 4.9（aarch64 内核跑 32 位用户态）上启动即段错误。
+      # 详见 Makefile 里的注释。
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: build client
+        run: make client client-tls
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xiaoai-client-armv7
+          path: |
+            dist/xiaoai-client-armv7
+            dist/xiaoai-client-armv7-tls
+          if-no-files-found: error
