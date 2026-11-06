@@ -117,10 +117,15 @@ jobs:
             ```
 
             ### 音箱端
-            下载 `xiaoai-client-armv7`，推到音箱后安装：
+            先在网页后台配好模型和唤醒词，然后 SSH 进音箱，一行装好：
+            ```bash
+            curl -sSfL https://raw.githubusercontent.com/${{ github.repository }}/main/deploy/scripts/install-client.sh \
+              | SERVER=ws://服务端地址:4399/ws sh
+            ```
+            不想 SSH 也行，在电脑上远程装（需要 sshpass）：
             ```bash
             DEV=音箱IP PASS='root密码' SERVER=ws://服务端地址:4399/ws \
               sh deploy/scripts/install-client.sh
             ```
 
-            校验和见 `SHA256SUMS.txt`。
+            校验和见 `SHA256SUMS.txt`；服务端走 `wss://` 时脚本会自动换成 `xiaoai-client-armv7-tls`。

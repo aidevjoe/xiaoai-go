@@ -53,7 +53,35 @@
 - 一台常年开机的 Linux 机器（NAS / 小主机 / 树莓派都行），装了 Docker
 - 一个模型 API（DeepSeek / Kimi / OpenAI 兼容的任意端点）
 
-### 1. 起服务端
+### 1. 拿模型
+
+服务端启动时按目录约定自动发现模型。一条命令下载最小四件套（下载约 280MB，解开约 490MB），不用 clone 仓库：
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/aidevjoe/xiaoai-go/main/deploy/scripts/fetch-models.sh \
+  | sh -s -- ~/xiaoai/models
+```
+
+只用云端 TTS（豆包 / Edge）的话，把本地合成模型跳过，省 200MB 磁盘：
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/aidevjoe/xiaoai-go/main/deploy/scripts/fetch-models.sh \
+  | SKIP_TTS=1 sh -s -- ~/xiaoai/models
+```
+
+国内直连 GitHub 慢，可以套个加速前缀：`... | PROXY=https://ghproxy.net/ sh -s -- ~/xiaoai/models`
+
+```
+models/
+├── silero_vad.onnx                                  # VAD，必需
+├── sherpa-onnx-sense-voice-...-int8-2024-07-17/     # ASR（中文识别）
+├── sherpa-onnx-kws-zipformer-.../                   # KWS（唤醒词）
+└── vits-icefall-zh-aishell3/                        # 本地 TTS（可选，用了云端就不需要）
+```
+
+脚本可以反复执行，已有文件会跳过。模型缺失不会让服务崩掉：后台会显示哪个零件没加载，其余照常工作。
+
+### 2. 起服务端
 
 ```bash
 mkdir -p ~/xiaoai/{models,data}
@@ -67,37 +95,30 @@ docker run -d --name xiaoai-server --restart unless-stopped \
 ```
 
 > `4399` 是设备面（音箱连它），`8080` 是管理后台。
-> 也可以用 `NAS_HOST=... NAS_DIR=... sh deploy/scripts/deploy-server.sh` 在远程主机上就地构建。
-
-### 2. 放模型
-
-服务端启动时会按目录约定自动发现模型。最小的四件套（约 480MB）：
-
-```bash
-sh deploy/scripts/fetch-models-local.sh ~/xiaoai/models   # 在本机跑，然后同步过去
-```
-
-```
-models/
-├── silero_vad.onnx                                  # VAD，必需
-├── sherpa-onnx-sense-voice-...-int8-2024-07-17/     # ASR（中文识别）
-├── vits-icefall-zh-aishell3/                        # 本地 TTS（可选，用了云端就不需要）
-└── sherpa-onnx-kws-zipformer-.../                   # KWS（唤醒词）
-```
-
-模型缺失不会让服务崩掉：后台会显示哪个零件没加载，其余照常工作。
+> 不想用镜像也可以 `git clone` 后 `NAS_HOST=... NAS_DIR=... sh deploy/scripts/deploy-server.sh`，在目标机上就地编译。
 
 ### 3. 装音箱端
 
-```bash
-make client          # 交叉编译出 dist/xiaoai-client-armv7（约 4MB）
+先 SSH 进音箱（已刷 open-xiaoai 固件），然后在**音箱上**跑一条命令：
 
-DEV=192.168.1.50 PASS='音箱root密码' SERVER=ws://192.168.1.10:4399/ws \
-  sh deploy/scripts/install-client.sh
+```bash
+ssh -o HostKeyAlgorithms=+ssh-rsa root@192.168.1.50
+
+# 进了音箱再执行，地址换成你的服务端
+curl -sSfL https://raw.githubusercontent.com/aidevjoe/xiaoai-go/main/deploy/scripts/install-client.sh \
+  | SERVER=ws://192.168.1.10:4399/ws sh
 ```
 
-脚本会传二进制、探测可用的录音设备、写守护脚本并设成开机自启。
+脚本会从 Release 拉 armv7 客户端（约 3MB）、探测可用的录音设备、写守护脚本并设成开机自启。
 之后换服务端地址只要改音箱上的 `/data/xiaoai/server.txt`，不用重装。
+
+不想 SSH 也可以在自己电脑上远程装（需要 `sshpass`）：
+
+```bash
+curl -sSfL -o install-client.sh https://raw.githubusercontent.com/aidevjoe/xiaoai-go/main/deploy/scripts/install-client.sh
+
+DEV=192.168.1.50 PASS='音箱root密码' SERVER=ws://192.168.1.10:4399/ws sh install-client.sh
+```
 
 ### 4. 打开后台配置
 
@@ -142,10 +163,6 @@ DEV=192.168.1.50 PASS='音箱root密码' SERVER=ws://192.168.1.10:4399/ws \
 
 ## 常见问题
 
-**音箱没反应 / 一直重启客户端**
-先看音箱上的 `/tmp/xiaoai.log`。最常见的是客户端版本用了 Go 1.24+ 编译——
-在 Linux 4.9 上会启动即段错误，必须用 Go 1.23（`make client` 已固定）。
-
 **识别总丢开头几个字**
 调大「听与分段 → 前置缓冲（pre_roll_ms）」。VAD 在嘈杂环境要 400~600ms 才确认人声，
 缓冲不够就会把开头吃掉。默认 700ms。
@@ -186,8 +203,8 @@ internal/client   采集、播放、重连、设备信息
 internal/server   hub（设备会话）/ audio（VAD·ASR·TTS·KWS）/ dialog / llm / tools / store
   └─ audio/tts_*.go   各 TTS 平台实现（一个平台一个文件）
 ui/               管理后台（Vue 3 + Vite）
-deploy/           Dockerfile 与部署脚本
-docs/             设计文档（tts.md：TTS 接入层设计）
+deploy/           Dockerfile 与脚本（模型下载 / 客户端安装 / 远程部署）
+docs/             截图等素材
 ```
 
 ### 加一个新的 TTS 平台
@@ -205,7 +222,9 @@ func init() {
 }
 ```
 
-后台的表单、音色下拉、试听面板会自动出现。详见 [docs/tts.md](docs/tts.md)。
+后台的配置表单、音色下拉、试听面板会自动出现。想照着现成的写，看
+[`tts_edge.go`](internal/server/audio/tts_edge.go)（在线拉音色）或
+[`tts_doubao.go`](internal/server/audio/tts_doubao.go)（流式 + 声音复刻）。
 
 ## 实测（4 核 CPU，LX06）
 
@@ -218,16 +237,13 @@ func init() {
 | 豆包 TTS 单句 | 300~800ms | 固定应答命中缓存后为 0 |
 | 客户端体积 | 2.9MB | 纯 Go 静态链接，`-s -w` 后 |
 
-**踩过的大坑**：最初单轮 3841ms，逐帧排查发现每帧多等 ~35ms——服务端监听 socket
-没关 Nagle。客户端关了没用，**发送端才是攒包的一方**。设 `TCP_NODELAY` 后降到 379ms。
 
 ## 致谢
 
 - [open-xiaoai](https://github.com/idootop/open-xiaoai) — 音箱固件与刷机方案
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — VAD / ASR / TTS / KWS 推理
 - [coder/websocket](https://github.com/coder/websocket)、[go-mp3](https://github.com/hajimehoshi/go-mp3)
-- 豆包 TTS 与声音复刻参考了 [open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge) 的接口用法；
-  Edge TTS 的 DRM 令牌与二进制帧格式参考了 [edge-tts-go](https://github.com/difyz9/edge-tts-go)（协议实现为本项目独立编写）
+-  [open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge)
 
 ## License
 
