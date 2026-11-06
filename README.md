@@ -120,6 +120,8 @@ curl -sSfL -o install-client.sh https://raw.githubusercontent.com/aidevjoe/xiaoa
 DEV=192.168.1.50 PASS='音箱root密码' SERVER=ws://192.168.1.10:4399/ws sh install-client.sh
 ```
 
+> 自己编译也行：`make client` 之后加 `BIN=dist/xiaoai-client-armv7`，就不走 Release 下载了。
+
 ### 4. 打开后台配置
 
 `http://你的服务器:8080/` → 填模型地址 / Key / 唤醒词 → 喊一声试试。
