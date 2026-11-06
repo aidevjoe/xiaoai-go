@@ -14,7 +14,6 @@ ui/dist/
 docs/
 assets/
 *.md
-!deploy/Dockerfile.server
 
 *.log
 .DS_Store
